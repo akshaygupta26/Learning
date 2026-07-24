@@ -1,8 +1,10 @@
 # Pokémon Card Price Database — Scope & Plan
 
 **Owner:** akshaygupta26
-**Created:** 2026-07-24
-**Hard deadline:** 2026-08-17 (eBay start date) — **24 days out**
+**Created:** 2026-07-24 · **Revised:** 2026-07-24 (employee fee discount confirmed)
+**Pivot date:** 2026-08-17 (eBay start date) — **24 days out**
+
+> **Revision note:** Aug 17 was previously a hard deadline requiring full liquidation. It is now a **pivot date**: the day the sell side opens at a better fee rate. This changed the strategy from "flip fast and exit" to "accumulate now, sell after." Sections 4, 6, 7 and 8 were rewritten accordingly.
 
 ---
 
@@ -10,10 +12,10 @@
 
 A price database and decision-support tool for **modern-era Pokémon singles**, built to:
 
-1. **Learn the market-data → trade-decision → P&L-reconciliation loop.** This is the primary goal. It is directly relevant to working at eBay: ingesting marketplace data, modeling fees, predicting net proceeds, and measuring prediction error against reality.
-2. **Execute a small number of real trades** with a **$100 bankroll** that can be lost without consequence.
+1. **Learn the market-data → trade-decision → P&L-reconciliation loop.** Primary goal. Directly relevant to working at eBay: ingesting marketplace data, modeling fees, predicting net proceeds, measuring prediction error against reality.
+2. **Execute real trades** with a **$100 bankroll** that can be lost without consequence.
 
-The system is the deliverable. The trading is how you pressure-test it.
+The system is the deliverable. The trading pressure-tests it.
 
 ## 2. Scope (decided)
 
@@ -22,68 +24,117 @@ The system is the deliverable. The trading is how you pressure-test it.
 | Era | Modern only — Scarlet & Violet + Sword & Shield (~2020–present) |
 | Product | Raw singles **and** graded slabs |
 | Language | English only |
-| Sealed | Out of scope for v1 |
 | Buy/sell venues | eBay, TCGplayer |
 | Bankroll | $100, treated as tuition |
 | Stack | Python + SQLite + Jupyter |
 | Data budget | ~$10/month |
 
-**Explicitly out of scope for v1:** Japanese cards, sealed product, vintage/WOTC, non-English sets, automated purchasing, any form of scraping.
+**Out of scope for v1:** Japanese cards, sealed product, vintage/WOTC, grading submissions, automated purchasing, any form of scraping. Sealed and grading submissions are the most likely v2 additions now that the horizon is open-ended — both were rejected on timeline, not merit.
 
 ---
 
-## 3. Data sources (researched and confirmed 2026-07-24)
+## 3. The core strategic insight
+
+**Your edge is your cost structure, not your card selection.**
+
+As an eBay employee you will pay a reduced final value fee. On modern raw singles — the most liquid, most efficient, most picked-over corner of this market — margins are thin and everyone reads the same TCGplayer market price. You will not out-pick experienced traders on which card appreciates.
+
+But there is a band of trades that **lose money at 13.25% and make money at your rate.** Nobody at retail fees is competing for those, because for them they aren't trades at all.
+
+Worked example — buy at $8, sell at $11:
+
+```
+                        Retail (13.25%)    Employee (5%)
+Gross                        $11.00           $11.00
+Final value fee              -$1.46           -$0.55
+Per-order fee                -$0.40           -$0.40
+Shipping (PWE)               -$1.25           -$1.25
+Supplies                     -$0.30           -$0.30
+                            -------          -------
+Net proceeds                  $7.59            $8.50
+Cost basis                   -$8.00           -$8.00
+                            -------          -------
+Profit                       -$0.41           +$0.50
+                             LOSS             PROFIT
+```
+
+**Breakeven FVF for this trade: 9.55%.** Below that rate it's profitable; above it, it isn't.
+
+This makes `breakeven_fvf` the most important derived column in the entire database. Every candidate trade gets one, and the opportunity ranking is built on it:
+
+- `breakeven_fvf > 13.25%` → profitable for anyone. Competitive, thin, crowded.
+- `your_rate < breakeven_fvf < 13.25%` → **your exclusive edge zone.** This is where to hunt.
+- `breakeven_fvf < your_rate` → not a trade at any accessible rate.
+
+Everything in §6 and §7 is built to surface that middle band.
+
+### Fee sensitivity
+
+The discount amount is unknown until onboarding, so it is a **config parameter**, not a constant. On the $12 → $18 example from §6:
+
+| Your FVF | Fee | Net | Profit | vs. retail |
+| --- | --- | --- | --- | --- |
+| 13.25% (retail) | $2.39 | $13.66 | $1.66 | — |
+| 10% | $1.80 | $14.25 | $2.25 | +36% |
+| 5% | $0.90 | $15.15 | $3.15 | +90% |
+| 0% | $0.00 | $16.05 | $4.05 | +144% |
+
+On thin margins the fee rate is *the* dominant variable. This is why the model is parameterized: on Aug 17 you plug in the real number and instantly see which held inventory flipped from unviable to viable.
+
+---
+
+## 4. Timeline and sequencing
+
+**Strategy: buy before Aug 17, sell after.** Source and accumulate during the build window using free time; hold across the pivot date; sell at the discounted rate.
+
+| Window | Activity |
+| --- | --- |
+| Jul 24 – Aug 5 | Build pipeline. Data accumulates daily |
+| Aug 5 – Aug 17 | Source and buy. Log every acquisition with real costs |
+| Aug 17 | Plug in actual employee fee rate. Re-rank all held inventory |
+| Aug 17 onward | List and sell. Reconcile predicted vs actual |
+
+### Constraints that still apply
+
+- **[TCGplayer seller approval: 1–2 weeks.](https://help.tcgplayer.com/hc/en-us/articles/201318336-How-do-I-sell-my-collectibles-on-TCGplayer)** Apply immediately. It's free optionality and the approval clock runs regardless of what else you're doing.
+- **[eBay new-seller payout hold: up to 21–30 days](https://www.ebay.com/help/selling/getting-paid/payouts-work-managed-payments-sellers/payments-hold?id=4816)**, lifting after ~10 sales totaling $150+. No longer schedule-critical, but it means your first few sales won't pay out fast. Don't plan on recycling capital quickly.
+
+### The risk this strategy introduces
+
+Holding inventory 3–4 weeks means **price risk**. Modern singles are supply-sensitive, and a new set release floods the market and depresses prices on chase cards from prior sets.
+
+**Open item:** check the Pokémon TCG release calendar for any set landing between now and mid-September. If one does, it directly affects what's safe to hold across the pivot. This wasn't a concern under the old flip-fast plan and is now a real one.
+
+### One guardrail
+
+This pipeline uses only public, documented APIs, and should stay that way. Once you're inside eBay you'll have access to internal tools and non-public data; using any of it to inform personal trading is a categorically different thing from anything in this plan. Worth being deliberate about the line now, before it's ambiguous.
+
+---
+
+## 5. Data sources (researched and confirmed 2026-07-24)
 
 | Source | Cost | Gives us | Role |
 | --- | --- | --- | --- |
 | [TCGCSV](https://tcgcsv.com/) | Free, no API key | Nightly full mirror of TCGplayer catalog + prices, per-condition SKUs, low/mid/market/high. Refreshes ~20:00 UTC daily | **Backbone.** Raw single prices |
-| [PokemonPriceTracker](https://www.pokemonpricetracker.com/pokemon-card-price-api) API tier | $9.99/mo | PSA graded values derived from eBay sales, 6 months price history, 20k credits/day, 60 req/min | **Graded layer** |
+| [PokemonPriceTracker](https://www.pokemonpricetracker.com/pokemon-card-price-api) API tier | $9.99/mo | PSA graded values from eBay sales, 6mo history, 20k credits/day, 60 req/min | **Graded layer** |
 | [eBay Browse API](https://developer.ebay.com/api-docs/buy/browse/overview.html) | Free, 5,000 calls/day | Active listings — asking prices, titles, sellers, end times | **Sourcing feed** (buy side) |
 | [pokemontcg.io](https://publicapis.io/pokemon-tcg-api) | Free | Card metadata, images, set data | Enrichment (optional) |
 
-### Sources rejected, and why
+### Rejected, and why
 
-- **eBay Marketplace Insights API** (the sold-comps one) — Limited Release. 2025–26 developer forum threads show individual applicants flatly denied; access is for approved partners only. This is *the* reason free graded pricing doesn't work.
-- **PokemonPriceTracker free tier** — 100 credits/day, but PSA and eBay-sold data are excluded from free. Only the paid tier unlocks them.
-- **Scraping eBay or TCGplayer** — against both platforms' terms. Do not do this. You are 24 days from being an eBay employee; starting the job with a ToS violation attached to your name is an unforced error, and the official APIs cover what we need anyway.
+- **eBay Marketplace Insights API** (sold comps) — Limited Release. 2025–26 developer forum threads show individual applicants flatly denied; approved partners only. This is *the* reason free graded pricing doesn't work.
+- **PokemonPriceTracker free tier** — 100 credits/day, but PSA and eBay-sold data are excluded from free.
+- **Scraping either marketplace** — against both platforms' terms, and a bad thing to have attached to your name 24 days before starting there. The official APIs cover what we need.
 
 ### On the $9.99/month
 
-That is **10% of your bankroll per month**. It cannot be justified as a trading expense — no $100 position generates $10/mo of edge. It is justified *only* as a learning expense, because the graded-vs-raw spread analysis is genuinely interesting and job-relevant. Budget it as tuition, not as cost of goods. If after one month the graded data isn't teaching you anything, cancel it.
+10% of bankroll per month. Not justifiable as a trading expense — no $100 position generates $10/mo of edge. Justified only as a learning expense, because the graded-vs-raw spread analysis is job-relevant. Budget as tuition. Cancel after a month if it isn't teaching you anything.
 
 ---
 
-## 4. The two constraints that reshape everything
+## 6. Schema (SQLite)
 
-Discovered during research. Both are load-bearing.
-
-### 4.1 eBay holds new-seller funds
-
-[eBay's payout policy](https://www.ebay.com/help/selling/getting-paid/payouts-work-managed-payments-sellers/payments-hold?id=4816): new sellers, or sellers without an established track record, have payouts held **until delivery is confirmed, or up to 21–30 days**. The hold lifts after roughly 10 completed sales totaling $150+ with a clean record.
-
-**Implication:** a sale on Aug 5 may not pay out until after Aug 17.
-
-### 4.2 TCGplayer seller approval takes 1–2 weeks
-
-[Per TCGplayer's own help docs](https://help.tcgplayer.com/hc/en-us/articles/201318336-How-do-I-sell-my-collectibles-on-TCGplayer). Applying on Jul 24 means selling in early-to-mid August at best.
-
-### 4.3 What this means
-
-A full cycle is: buy → ship to you (3–5d) → receive/verify → list → sell (7d auction, or BIN of unknown duration) → ship out (3–5d) → funds settle (up to 21d as a new seller).
-
-**Realistic completed cycles before Aug 17: one, possibly two, and the money may not clear in time.**
-
-This is not a reason to abandon the project. It is a reason to define success correctly:
-
-> **Success on Aug 17 = a working pipeline, a fee-aware valuation model, and a reconciliation notebook comparing predicted net proceeds to actual. Trades executed are evidence the model works, not the goal itself.**
-
-Cash settling after your start date is fine. Holding *inventory* past your start date may not be — see open item #1.
-
----
-
-## 5. Schema (SQLite)
-
-Design principle: **fees are first-class**. The single most common beginner error is comparing a $12 buy to an $18 market price and seeing "+$6." The real math is 13.25% final value fee + per-order fee + shipping + supplies, netting closer to +$2.80 before your time is counted. **This database never displays a gross spread — every opportunity is shown net of fees.**
+Design principle: **fees are first-class.** The most common beginner error is comparing a $12 buy to an $18 market price and seeing "+$6." Real math nets closer to +$1.66 at retail fees. **This database never displays a gross spread — every opportunity is net of fees, at your configured rate.**
 
 ### Reference / catalog
 
@@ -108,7 +159,7 @@ skus(
 ### Price facts (time series)
 
 ```sql
--- One row per SKU per source per day. The core fact table.
+-- One row per SKU per source per day. Core fact table.
 price_snapshots(
   sku_id FK, source, as_of_date,
   market, low, mid, high, direct_low,
@@ -116,8 +167,8 @@ price_snapshots(
 )
 
 graded_prices(
-  card_id FK, grader,                    -- PSA / CGC / BGS
-  grade, as_of_date, sale_price, sample_size, source,
+  card_id FK, grader, grade,             -- PSA / CGC / BGS
+  as_of_date, sale_price, sample_size, source,
   PRIMARY KEY (card_id, grader, grade, as_of_date)
 )
 
@@ -138,7 +189,8 @@ watchlist(card_id FK, target_buy_price, notes, added_at)
 inventory(
   lot_id PK, card_id FK, sku_id FK,
   acquired_date, acquired_price, acquired_fees, acquired_venue,
-  status                                 -- held / listed / sold
+  status,                                -- held / listed / sold
+  predicted_net_at_purchase              -- what the model said; graded later
 )
 
 sales(
@@ -152,113 +204,111 @@ sales(
 
 - `v_current_prices` — latest snapshot per SKU
 - `v_price_trend` — 7d / 30d change per SKU
-- `v_opportunities` — active eBay listings ranked by **net** edge vs TCGplayer market
+- `v_opportunities` — active listings ranked by net edge **at your fee rate**, with `breakeven_fvf` and an `edge_zone` flag (`open` / `exclusive` / `dead`) per §3
 - `v_pnl` — realized and unrealized P&L per lot, **predicted vs actual**
 
-`v_pnl` is the one that matters for your job. It is where the model gets graded.
+`v_pnl` is the one that matters for your job. It's where the model gets graded.
 
 ---
 
-## 6. Fee model
+## 7. Fee model
 
-Lives in a config file, not hardcoded — these rates change and must be verified against current published schedules before you trade.
+Config file, not hardcoded. Rates change and must be verified against current published schedules before trading.
 
-- **eBay:** ~13.25% final value fee on item + shipping, plus a per-order fee (~$0.30–0.40)
-- **TCGplayer:** ~10.25% commission + ~2.5% payment processing
-- **Shipping:** PWE with tracking ~$1.10–1.40; bubble mailer with tracking ~$5
-- **Supplies:** sleeve + toploader + team bag ~$0.30
-
-**Worked example — why this matters:**
-
-Buy a card for $12. TCGplayer market says $18. Naive read: +$6, a 50% gain.
-
-Actual, selling on eBay:
-```
-Gross                    $18.00
-eBay FVF (13.25%)        -$2.39
-Per-order fee            -$0.40
-Shipping (PWE)           -$1.25
-Supplies                 -$0.30
-                        --------
-Net proceeds             $13.66
-Cost basis              -$12.00
-                        --------
-Profit                    $1.66   (13.8%, not 50%)
+```python
+FEES = {
+    "ebay": {
+        "fvf_rate": 0.1325,      # OVERRIDE ON AUG 17 with employee rate
+        "per_order": 0.40,
+        "applies_to_shipping": True,
+    },
+    "tcgplayer": {
+        "commission": 0.1025,
+        "payment_processing": 0.025,
+    },
+}
+SHIPPING = {"pwe_tracked": 1.25, "bmwt": 5.00}
+SUPPLIES = 0.30
 ```
 
-One return, one lost PWE, or one card that grades LP instead of NM wipes out several of these. **This is the single most important thing the database exists to show you.**
+Two functions carry the model:
+
+- `net_proceeds(gross, venue, fvf_rate) -> float`
+- `breakeven_fvf(gross, cost_basis, venue) -> float` — the rate at which a trade breaks even, per §3
+
+Everything downstream is built on those two.
 
 ---
 
-## 7. Build phases
+## 8. Build phases
 
-Day numbers are from 2026-07-24.
+Day numbers from 2026-07-24.
 
 ### Phase 0 — Day 1 (~2 hrs)
-- Repo skeleton, SQLite schema, config file, `.env` for API keys
-- **Apply for TCGplayer seller account today** — 1–2 week approval is the long pole; every day of delay is a day off the back end
-- Check eBay employee conflict-of-interest policy in your onboarding docs (open item #1)
+- Repo skeleton, SQLite schema, config, `.env` for API keys
+- **Apply for TCGplayer seller account today** — 1–2 week approval, runs in background
 - Sign up for PokemonPriceTracker API tier
+- Check the Pokémon set release calendar through mid-September (§4 risk)
 
 ### Phase 1 — Days 2–3
 - TCGCSV ingester: Pokémon category → SV/SWSH groups → products → prices
 - Load into `sets`, `cards`, `skus`, `price_snapshots`
-- Idempotent, re-runnable daily. Ship this as a cron/manual script
-- **Start it running immediately** — price history only accumulates in wall-clock time, and you cannot backfill TCGCSV
+- Idempotent, re-runnable daily
+- **Start it running immediately.** Price history accumulates in wall-clock time and TCGCSV cannot be backfilled. Data not collected this week does not exist later
 
 ### Phase 2 — Days 4–5
-- **Notebook 1: What does the modern market look like?** Price distributions, which rarities hold value, volatility by set, how many cards are even liquid enough to trade
-- Build the watchlist from what you find, not from vibes
+- **Notebook 1: What does the modern market look like?** Price distributions, which rarities hold value, volatility by set, how many cards are liquid enough to trade at all
+- Build the watchlist from findings, not vibes
 
 ### Phase 3 — Days 6–8
 - eBay Browse API integration (OAuth, search, pagination)
-- **Title parsing** — extract set, card number, condition, grade from freeform listing titles. This is the hardest and most interesting engineering in the project. Real listings look like `"Charizard ex 223/197 SV Obsidian Flames SIR PSA 10 GEM MINT 🔥"`
-- Fuzzy-match listings to catalog, with a confidence score you can filter on
+- **Title parsing** — extract set, number, condition, grade from freeform titles. Hardest and most interesting engineering here. Real listings look like `"Charizard ex 223/197 SV Obsidian Flames SIR PSA 10 GEM MINT 🔥"`
+- Fuzzy-match to catalog with a confidence score you can filter on
 
 ### Phase 4 — Days 9–10
-- Fee engine: `net_proceeds(gross, venue) -> float`
-- Edge calculation: `edge = net_proceeds(market_price) - (listing_price + listing_shipping)`
-- `v_opportunities` ranked view. **The database becomes a tool at this point**
+- Fee engine: `net_proceeds()` and `breakeven_fvf()`
+- `v_opportunities` with edge-zone classification
+- **Sensitivity view: which opportunities are viable at 13.25% / 10% / 5% / 0%.** Built now so Aug 17 is a one-line config change, not a rewrite
+- The database becomes a tool at this point
 
-### Phase 5 — Days 11–12
+### Phase 5 — Days 11–13
 - PokemonPriceTracker ingestion for graded prices
-- **Notebook 2: Is the raw→PSA grading spread real?** Compute raw price vs PSA 9 vs PSA 10 across the watchlist, subtract grading cost and turnaround time
-- Expected finding: with $100 and PSA turnaround measured in months, grading arbitrage is closed to you. Proving that rigorously is worth more than assuming it
+- **Notebook 2: Is the raw→PSA spread real?** Raw vs PSA 9 vs PSA 10 across the watchlist, net of grading cost and turnaround. Now that the horizon is open-ended this is a live v2 strategy rather than a thought experiment — evaluate it properly
 
-### Phase 6 — Days 13–24
-- **Execute.** Buy 5–10 raw singles in the $3–20 range. Diversify — you want repetitions, not one bet
-- Log every purchase in `inventory` with real fees, real shipping
-- List them. Sell what sells
-- **Notebook 3: Predicted vs actual.** For every completed sale, compare what the model said you'd net against what eBay actually paid. Categorize the gaps: fee model wrong? condition misgraded? shipping underestimated? This notebook is the actual portfolio artifact
+### Phase 6 — Days 14–24 (buy window)
+- **Source and buy.** 5–10 raw singles, $3–20 range. Diversify — you want repetitions, not one bet
+- Prioritize the **exclusive edge zone** from §3: trades that don't work at retail fees but work at yours
+- Record `predicted_net_at_purchase` on every lot. This is what gets graded later
+- Log every real cost: item, shipping paid, taxes
 
----
+### Phase 7 — Aug 17 onward (sell window)
+- Plug in the actual employee fee rate. Re-rank held inventory
+- List and sell
+- **Notebook 3: Predicted vs actual.** For every completed sale, compare model-predicted net against what eBay actually paid. Categorize the gaps: fee model wrong? condition misgraded? shipping underestimated? demand overestimated?
 
-## 8. Honest expected outcome
-
-- **Financial:** somewhere between **-$40 and +$25**. The expected value of a beginner flipping modern raw singles, after fees, is roughly zero minus mistakes. Modern singles are the most efficient, most liquid, most picked-over corner of this market. There is no free money in Scarlet & Violet commons.
-- **Cash timing:** some or all proceeds likely settle after Aug 17 due to the new-seller hold.
-- **What you actually get:** a working ingestion pipeline against three real APIs, a fee-aware valuation model, a title-parsing/entity-matching problem solved, and a reconciliation notebook that shows you measured your own model's error. For a job at eBay, that is worth considerably more than the $100.
-
-If the goal were purely to make money, the correct advice would be "don't." The goal is to learn the loop, so: proceed, spend little, measure everything.
+Notebook 3 is the portfolio artifact. A pipeline that ingests data is common; one where the author measured their own model's error and explained it is not.
 
 ---
 
-## 9. Open items — I need answers on these
+## 9. Honest expected outcome
 
-1. **eBay employee policy.** Check your offer/onboarding docs for conflict-of-interest and employee trading rules. Determines whether you must fully exit positions before Aug 17, or can hold and sell after. **Current working assumption: you must close out.** This is the single biggest unknown in the plan.
-2. **Do you already own any Pokémon cards?** Free inventory to test the sell side with, without spending bankroll. Would meaningfully de-risk the timeline.
-3. **Do you have an existing eBay account with selling history?** An account with 10+ completed sales and $150+ in volume skips the payout hold entirely. A brand-new account does not.
-4. **Confirm the $9.99/mo** PokemonPriceTracker spend, understanding it's 10% of bankroll and justified as learning, not trading.
-5. **Hours per week available.** The phase plan assumes evenings and weekends. If you have less, Phases 5 and 6 compress and graded gets deferred.
+- **Financial:** roughly **-$30 to +$40**. The fee discount genuinely improves this — it's the difference between fighting for scraps at retail rates and having a structural advantage. But $100 across 5–10 cards caps the absolute upside at pocket change regardless of how good the model is. There is no free money in Scarlet & Violet commons; there is a small, real, fee-driven edge.
+- **Cash timing:** first sales won't pay out quickly due to the new-seller hold. Don't plan on recycling capital.
+- **What you actually get:** a working ingestion pipeline against three real APIs, a fee-aware valuation model with a genuine strategic insight behind it, a title-parsing/entity-matching problem solved, and a reconciliation notebook showing you measured your own error. Worth considerably more than the $100.
 
 ---
 
-## 10. Decision needed before I write code
+## 10. Open items
 
-Given the timeline constraints in §4, pick one:
+1. ~~eBay employee policy~~ — **Resolved.** Selling permitted; employee fee discount applies.
+2. **Exact fee discount** — unknown until onboarding. Modeled as a config parameter with sensitivity analysis. Get the number, and the terms (immediate? capped? category-restricted? store subscription required?) on Aug 17.
+3. **Set release calendar** — check for any Pokémon release between now and mid-September. Directly affects hold risk across the pivot date. **Newly relevant under the buy-and-hold strategy.**
+4. **Do you already own any Pokémon cards?** Free inventory to test the sell side without spending bankroll.
+5. **Existing eBay account with selling history?** 10+ sales / $150+ volume skips the payout hold. Brand-new account doesn't.
+6. **Hours per week available.** Phase plan assumes evenings and weekends. Less than that and Phase 5 defers.
 
-- **(A) Build the full system, trade small, accept late settlement.** Follow the plan as written. Highest learning, money possibly arrives after Aug 17.
-- **(B) Build the system, skip trading entirely before Aug 17.** Pure data/analysis project. Trade later once the employee-policy question is resolved. Zero financial risk, zero mechanics learned.
-- **(C) Trade immediately with minimal tooling, build the system around it.** Buy cards this week using manual research, build the DB to explain what happened. Fastest to real experience, worst engineering.
+---
 
-**Recommendation: (A).** It's the only option that exercises the whole loop, and late-settling cash is a non-issue when the amount is $100 you've already written off.
+## 11. Next action
+
+Phases 0 and 1 — schema plus the TCGCSV ingester — so price history starts accumulating tonight. Everything else depends on having data, and the collection clock is the only one that can't be made up later.
