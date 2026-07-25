@@ -99,7 +99,30 @@ them against real sales and correct them.
 (76%) are worth under $1. The realistic universe for a small bankroll is the
 ~1,100 cards in the $5–20 band. Filter early.
 
+## What the data says so far
+
+Applying the fee model to the first snapshot (1,901 cards in the $3–40 band,
+at an assumed 5% rate):
+
+- The **exclusive edge zone is real but thin** — 355 cards, median profit
+  $0.41, only 31 clearing a $1.50 handling threshold.
+- The **fee discount is worth ~$0.73 per trade**, about $8 across a $100
+  bankroll. A real advantage; not a strategy.
+- **Median profit is negative in every rarity.** Modern singles are
+  efficiently priced.
+
+The structural finding: buying at TCGplayer low and selling at TCGplayer
+market **is not an arbitrage** — it's one order book. Real edge needs a second
+venue. That makes eBay ingestion (Phase 3) the critical path rather than an
+add-on. Full write-up in `notebooks/01_market_survey.ipynb` §4 and
+[PLAN.md](PLAN.md) §12.
+
 ## Status
 
-Phases 0–1 complete: schema, fee model, TCGCSV ingester.
-Next: Notebook 1, the market survey that produces the watchlist.
+| Phase | State |
+| --- | --- |
+| 0–1 · schema, fee model, TCGCSV ingester | Complete |
+| 2 · market survey, watchlist (189 cards) | Complete |
+| 3 · eBay Browse + title parsing | **Next — critical path** |
+| 5 · graded prices | Pending |
+| 6–7 · trade and reconcile | Pending |

@@ -269,9 +269,17 @@ Notebook 3 is the portfolio artifact. A pipeline that ingests data is common; on
 1. ~~eBay employee policy~~ — **Resolved.** Selling permitted; employee fee discount applies.
 2. **Exact fee discount** — unknown until onboarding. Modeled as a config parameter with sensitivity analysis. Get the number, and the terms (immediate? capped? category-restricted? store subscription required?) on Aug 17.
 3. ~~Set release calendar~~ — **Resolved.** ME: 30th Celebration lands 2026-09-16. Selling window is clear; treat mid-September as a soft deadline to be flat. See §4.
-4. **Do you already own any Pokémon cards?** Free inventory to test the sell side without spending bankroll.
-5. **Existing eBay account with selling history?** 10+ sales / $150+ volume skips the payout hold. Brand-new account doesn't.
+4. ~~Do you already own any Pokémon cards?~~ — **Resolved: no.** Consequence: there is no free inventory to rehearse the sell side on. Every test of listing, packing, shipping and fee reconciliation costs bankroll. See "tuition lots" below.
+5. ~~Existing eBay account with selling history?~~ — **Resolved: yes, but never in trading cards.** Account-level history should reduce or remove the payout hold, since that test is account-wide. But eBay applies **category-based selling limits to sellers listing in a category for the first time**, and account history does not necessarily carry over.
+
+   **Action before spending any bankroll: check Seller Hub → selling limits for the Trading Cards category.** If you are capped at a handful of listings per month, that dictates how many cards to buy. Cheap to check, expensive to discover after you own inventory.
 6. **Hours per week available.** Phase plan assumes evenings and weekends. Less than that and Phase 5 defers.
+
+### Tuition lots
+
+With no cards on hand, the first purchases have to do double duty: prove the model *and* teach you the mechanics you've never performed (PWE packing, tracked shipping, listing quality, fee reconciliation).
+
+Keep those goals separate in the data. Buy 2–3 deliberately cheap cards purely as mechanics rehearsal, expect to lose money on them, and tag them in `inventory.notes` as tuition lots so Notebook 3 can exclude them. Otherwise deliberate loss-leaders pollute the measurement of whether the edge model actually works.
 
 ---
 
@@ -299,11 +307,53 @@ The realistic universe for a $100 bankroll is the **~1,100 cards in the $5–20 
 
 This also sharpens the §3 thesis. In the $5–20 band, per-order and shipping costs are 8–30% of gross — which is *why* the fee rate dominates, and why the exclusive edge zone exists at all. At $200 a card, a few points of FVF barely matter. At $8, it's the whole trade.
 
-## 12. Next action
+## 12. Phase 2 findings — the thesis, measured
 
-**Notebook 1** — the market survey, filtered to the tradeable band, producing the watchlist. Requires no new data.
+`notebooks/01_market_survey.ipynb` applies the fee model to the first snapshot: buy at the lowest listing, sell at market price. Results at an assumed 5% employee rate, across 1,901 cards in the $3–40 band:
 
-Meanwhile the daily ingest needs to be running. One snapshot supports no trend analysis; TCGCSV cannot be backfilled.
+| Edge zone | Cards | Median profit | Clearing $1.50 |
+| --- | --- | --- | --- |
+| `open` (works at retail too) | 271 | $2.13 | 182 |
+| `exclusive` (works only for you) | 355 | $0.41 | 31 |
+| `dead` | 1,275 | −$0.90 | 0 |
+
+**The exclusive zone is real, and much thinner than §3 hoped.** 355 cards, median profit $0.41, only 31 clearing the handling threshold.
+
+**The fee discount is worth a median $0.73 per trade** on a median $8.87 card — about 8%. Across a $100 bankroll (~11 cards) that's roughly **$8 of total edge**. A genuine structural advantage that improves trades you were already making; not something that converts a losing strategy into a winning one.
+
+**Median profit is negative in every single rarity.** The typical card in the tradeable band loses money on this round trip after fees and shipping. Modern singles are efficiently priced, which is what should be expected of the most liquid corner of the hobby.
+
+### The structural problem, and what it changes
+
+The largest apparent opportunities are nearly all `open` zone — profitable at retail too. A trade that good, visible to everyone, has already been taken; its survival on the screen is evidence something is wrong with it (damaged copy, misidentified print, non-English, already sold). 90 of 1,901 cards show spreads over 50% and are filtered as artifacts.
+
+More fundamentally:
+
+> **Buying at TCGplayer low and selling at TCGplayer market is not an arbitrage.** It is one order book. Relisting into the venue you just bought from puts you behind the same low listings you were competing with, and market price is a trailing average of completed sales — not a price anyone owes you.
+
+Real edge requires **a price difference between two venues**, where one side is genuinely less efficient. That is eBay, specifically its badly-listed corners: missing set names, misspellings, no card number, auctions ending at 3am, a $20 card titled "pokemon card rare holo".
+
+**This promotes Phase 3 from a component to the critical path.** eBay Browse ingestion and title parsing are not a layer on top of the TCGplayer data — without a second venue there is no arbitrage to measure at all. The TCGplayer feed is the *reference price*; eBay is where the mispricing lives.
+
+The 189-card watchlist this notebook produced is not a buy list. It is the search universe for Phase 3.
+
+## 13. Revised expected outcome
+
+Tightening §9 with measured numbers rather than estimates: **-$25 to +$25**, with the distribution centred slightly below zero before the fee discount and slightly above it after.
+
+The reasoning is now concrete rather than intuitive: the median trade in this band is a loser, the fee discount is worth ~$8 across the bankroll, and any profit beyond that has to come from cross-venue mispricing that hasn't been measured yet. Whether that mispricing exists at a size worth capturing is the open empirical question, and Phase 3 is what answers it.
+
+That is a better position to be in than the plan started from. The question went from "can I make money flipping cards" to "does exploitable cross-venue mispricing exist in the $5–20 band, and is it larger than my costs" — which is answerable with data.
+
+## 14. Next action
+
+**Phase 3: eBay Browse API ingestion and title parsing**, now the critical path. Search the 189-card watchlist against active eBay listings, parse freeform titles into catalog matches, and compute genuine cross-venue spreads.
+
+Two things needed first:
+- eBay developer keys (`EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET` in `.env`)
+- Trading Cards category selling limits checked (§10 item 5)
+
+And the daily ingest needs to be running, or none of the trend work in §12 ever becomes possible:
 
 ```
 0 22 * * *  cd /path/to/Learning && python3 scripts/ingest_tcgcsv.py --quiet >> ingest.log 2>&1
