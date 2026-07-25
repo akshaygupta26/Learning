@@ -1,0 +1,21 @@
+# Local database — regenerate with scripts/init_db.py + ingest
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Raw API payload cache
+data/raw/

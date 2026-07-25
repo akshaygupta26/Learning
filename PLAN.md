@@ -21,7 +21,7 @@ The system is the deliverable. The trading pressure-tests it.
 
 | Dimension | Decision |
 | --- | --- |
-| Era | Modern only — Scarlet & Violet + Sword & Shield (~2020–present) |
+| Era | Modern only — **Mega Evolution + Scarlet & Violet + Sword & Shield** (46 sets, ~2020–present) |
 | Product | Raw singles **and** graded slabs |
 | Language | English only |
 | Buy/sell venues | eBay, TCGplayer |
@@ -103,7 +103,9 @@ On thin margins the fee rate is *the* dominant variable. This is why the model i
 
 Holding inventory 3–4 weeks means **price risk**. Modern singles are supply-sensitive, and a new set release floods the market and depresses prices on chase cards from prior sets.
 
-**Open item:** check the Pokémon TCG release calendar for any set landing between now and mid-September. If one does, it directly affects what's safe to hold across the pivot. This wasn't a concern under the old flip-fast plan and is now a real one.
+**Resolved from the TCGCSV group feed:** the next release is **ME: 30th Celebration on 2026-09-16**. A 30th-anniversary set is likely to be a heavily-printed, heavily-hyped one.
+
+That lands roughly four weeks after the pivot date, which is good news and bad news. Good: your Aug 17 – mid-September selling window is clear of a supply flood. Bad: anything still unsold by mid-September gets marked down as attention and supply rotate to the new set. **Treat 2026-09-16 as a soft deadline to be flat.** Recorded in `config.UPCOMING_RELEASES`.
 
 ### One guardrail
 
@@ -136,69 +138,33 @@ This pipeline uses only public, documented APIs, and should stay that way. Once 
 
 Design principle: **fees are first-class.** The most common beginner error is comparing a $12 buy to an $18 market price and seeing "+$6." Real math nets closer to +$1.66 at retail fees. **This database never displays a gross spread — every opportunity is net of fees, at your configured rate.**
 
-### Reference / catalog
+**Live in [`schema.sql`](schema.sql).** Tables: `sets`, `products`, `price_snapshots`, `graded_prices`, `ebay_listings`, `watchlist`, `inventory`, `sales`, `ingest_runs`.
 
-```sql
-sets(
-  set_id PK, name, series, release_date, tcgcsv_group_id, card_count
-)
+### Correction: there is no condition-level pricing
 
-cards(
-  card_id PK, set_id FK, number, name, rarity,
-  tcgplayer_product_id, ppt_id, image_url
-)
+The original draft of this plan specified a `skus` table keyed by condition (NM/LP/MP/HP). **That was wrong, and building against it would have failed on first contact with the data.**
 
--- TCGplayer's SKU model: one card has many sellable variants
-skus(
-  sku_id PK, card_id FK, condition,      -- NM / LP / MP / HP / DMG
-  printing,                              -- Normal / Holofoil / Reverse Holofoil
-  language
-)
+TCGCSV publishes prices at **product × printing**, not SKU level:
+
+```json
+{"productId": 692938, "subTypeName": "Normal",
+ "lowPrice": 19.0, "midPrice": 25.0, "highPrice": 59.99,
+ "marketPrice": 22.52, "directLowPrice": null}
 ```
 
-### Price facts (time series)
+`subTypeName` is the printing — Normal / Holofoil / Reverse Holofoil. There is no condition axis at all. Condition-level pricing lives behind the real TCGplayer API, which is closed to new applicants for the same reason eBay's sold-comps API is.
 
-```sql
--- One row per SKU per source per day. Core fact table.
-price_snapshots(
-  sku_id FK, source, as_of_date,
-  market, low, mid, high, direct_low,
-  PRIMARY KEY (sku_id, source, as_of_date)
-)
+Consequences, all load-bearing:
 
-graded_prices(
-  card_id FK, grader, grade,             -- PSA / CGC / BGS
-  as_of_date, sale_price, sample_size, source,
-  PRIMARY KEY (card_id, grader, grade, as_of_date)
-)
+1. Feed prices are **effectively Near Mint**. Condition is a property of things you *buy* and *see listed*, never of the reference price feed.
+2. Condition discounts are modeled separately in `fees.CONDITION_MULTIPLIERS` (LP 0.85, MP 0.70, HP 0.55). **These are rules of thumb, not measurements.** They are flagged as unvalidated in the code and are a specific thing Notebook 3 should correct against real sales.
+3. Buying anything below NM means your cost basis is real but your comp is not. Early on, prefer NM to avoid compounding a modeled discount with a modeled price.
 
--- Active eBay listings, fuzzy-matched to catalog. Asking prices, NOT sales.
-ebay_listings(
-  listing_id PK, card_id FK, raw_title,
-  price, shipping_cost, condition_parsed, grade_parsed,
-  seller, listing_type, end_time, observed_at,
-  match_confidence                       -- title parsing is lossy; track it
-)
-```
+### Grain
 
-### Trading
+`price_snapshots` is keyed `(product_id, sub_type_name, as_of_date, source)`. That primary key is what makes the daily job idempotent — a same-day re-run replaces rather than duplicates.
 
-```sql
-watchlist(card_id FK, target_buy_price, notes, added_at)
-
-inventory(
-  lot_id PK, card_id FK, sku_id FK,
-  acquired_date, acquired_price, acquired_fees, acquired_venue,
-  status,                                -- held / listed / sold
-  predicted_net_at_purchase              -- what the model said; graded later
-)
-
-sales(
-  lot_id FK, sold_date, venue, gross_price,
-  platform_fee, payment_fee, shipping_cost, shipping_charged,
-  supplies_cost, net_proceeds
-)
-```
+Singles and sealed both live in `products`, split by `is_single`. The only reliable discriminator in the feed is the presence of a `Number` field in `extendedData`. Note that brand-new sets ship with sparse metadata — ME05 launched with only `CardText` and `UPC`, no `Rarity` or `Number` — so a new set's cards look like sealed product for a few days until TCGplayer backfills. Re-running the ingest picks up the corrections.
 
 ### Derived views
 
@@ -302,13 +268,43 @@ Notebook 3 is the portfolio artifact. A pipeline that ingests data is common; on
 
 1. ~~eBay employee policy~~ — **Resolved.** Selling permitted; employee fee discount applies.
 2. **Exact fee discount** — unknown until onboarding. Modeled as a config parameter with sensitivity analysis. Get the number, and the terms (immediate? capped? category-restricted? store subscription required?) on Aug 17.
-3. **Set release calendar** — check for any Pokémon release between now and mid-September. Directly affects hold risk across the pivot date. **Newly relevant under the buy-and-hold strategy.**
+3. ~~Set release calendar~~ — **Resolved.** ME: 30th Celebration lands 2026-09-16. Selling window is clear; treat mid-September as a soft deadline to be flat. See §4.
 4. **Do you already own any Pokémon cards?** Free inventory to test the sell side without spending bankroll.
 5. **Existing eBay account with selling history?** 10+ sales / $150+ volume skips the payout hold. Brand-new account doesn't.
 6. **Hours per week available.** Phase plan assumes evenings and weekends. Less than that and Phase 5 defers.
 
 ---
 
-## 11. Next action
+## 11. Build status
 
-Phases 0 and 1 — schema plus the TCGCSV ingester — so price history starts accumulating tonight. Everything else depends on having data, and the collection clock is the only one that can't be made up later.
+**Phases 0–1 complete (2026-07-24).** Schema, fee model, and TCGCSV ingester are live and verified. First snapshot captured: 46 sets, 10,378 products, 14,766 price rows, 93 requests against a 10,000/day cap. Re-run confirmed idempotent (zero duplicate keys).
+
+The fee model reproduces both worked examples in §3 exactly — breakeven FVF of 9.55% on the $8→$11 trade, 22.50% on $12→$18.
+
+### What the first snapshot revealed
+
+Of **13,379 priced tradeable singles**:
+
+| Price band | Count | Share |
+| --- | --- | --- |
+| under $1 | 10,120 | 76% |
+| $1–5 | 1,437 | 11% |
+| $5–20 | 1,101 | 8% |
+| $20–100 | 583 | 4% |
+| $100+ | 138 | 1% |
+
+**Three quarters of the modern catalog is worth less than a dollar.** Shipping alone is $1.25, so those cards can never be traded individually at any fee rate — they are bulk, not inventory.
+
+The realistic universe for a $100 bankroll is the **~1,100 cards in the $5–20 band**, plus the upper part of $1–5. That is the hunting ground, and it is 8% of what's in the database. Notebook 1 should filter to it immediately rather than surveying all 13,379.
+
+This also sharpens the §3 thesis. In the $5–20 band, per-order and shipping costs are 8–30% of gross — which is *why* the fee rate dominates, and why the exclusive edge zone exists at all. At $200 a card, a few points of FVF barely matter. At $8, it's the whole trade.
+
+## 12. Next action
+
+**Notebook 1** — the market survey, filtered to the tradeable band, producing the watchlist. Requires no new data.
+
+Meanwhile the daily ingest needs to be running. One snapshot supports no trend analysis; TCGCSV cannot be backfilled.
+
+```
+0 22 * * *  cd /path/to/Learning && python3 scripts/ingest_tcgcsv.py --quiet >> ingest.log 2>&1
+```

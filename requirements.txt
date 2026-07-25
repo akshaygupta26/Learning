@@ -1,0 +1,7 @@
+# The ingestion pipeline deliberately uses only the standard library
+# (urllib + sqlite3) so it runs anywhere with no install step.
+#
+# These are for the analysis notebooks only (Phase 2 onward).
+pandas>=2.0
+matplotlib>=3.7
+jupyterlab>=4.0
