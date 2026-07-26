@@ -51,16 +51,55 @@ python3 scripts/ingest_tcgcsv.py --limit 3  # smoke test
 python3 scripts/ingest_tcgcsv.py --list     # show scope, fetch nothing
 ```
 
-Cron it:
-
-```
-0 22 * * *  cd /path/to/Learning && python3 scripts/ingest_tcgcsv.py --quiet >> ingest.log 2>&1
-```
-
 A full run is **46 sets / ~93 requests**, against TCGCSV's published cap of
 10,000 requests per day. Re-running the same day is safe: products upsert and
 price rows are keyed by `(product_id, printing, date, source)`, so a re-run
 replaces rather than duplicates.
+
+### Where to run it
+
+**Recommended: GitHub Actions** — already configured in
+[`.github/workflows/daily-ingest.yml`](.github/workflows/daily-ingest.yml).
+It runs at 22:00 UTC, after TCGCSV's ~20:00 refresh, and commits the day's
+snapshot back to the repo. No server, no laptop uptime, no secrets required
+(TCGCSV needs no API key). Enable it by pushing the workflow and checking the
+Actions tab; trigger a test run with **Run workflow**.
+
+One caveat: GitHub disables scheduled workflows after **60 days without repo
+activity**. Bot commits don't reliably reset that timer, so push something
+yourself occasionally, or re-enable it from the Actions tab if it stops.
+
+**Alternative: your own machine.** Works, but only while the machine is awake.
+
+```bash
+# Linux
+crontab -e
+0 22 * * *  cd /path/to/Learning && python3 scripts/ingest_tcgcsv.py --quiet >> ingest.log 2>&1
+```
+
+On macOS, prefer `launchd` over cron — a `StartCalendarInterval` job runs on
+wake if the scheduled time was missed, whereas cron simply skips it.
+
+### Data durability
+
+The `.sqlite` file is a **build artifact, not the record**. It's gitignored.
+The record is the committed CSV export:
+
+```
+data/catalog.csv.gz            current catalog, overwritten each run
+data/prices/YYYY-MM-DD.csv.gz  one file per day, append-only
+```
+
+At ~143KB/day that's about **51MB/year** — small, diffable, and rebuildable
+anywhere:
+
+```bash
+python3 scripts/export_snapshot.py        # DB  -> CSV  (the Action does this)
+python3 scripts/rebuild_from_snapshots.py # CSV -> DB   (after a fresh clone)
+```
+
+Committing the SQLite file directly would mean a few hundred MB of
+undiffable binary within a year. Gzipped CSV rebuilds in seconds.
 
 ## Layout
 
@@ -85,6 +124,12 @@ scripts/
 | [PokemonPriceTracker](https://www.pokemonpricetracker.com/pokemon-card-price-api) | $9.99/mo | PSA graded prices | Phase 5 |
 
 Public documented APIs only. No scraping.
+
+**API keys never need to be shared with anyone**, including an AI assistant.
+All integrations read from environment variables, so code can be written and
+reviewed without the key value ever being visible. Keys live in your local
+`.env` (gitignored) and GitHub repository secrets — nowhere else. See
+[docs/SECRETS.md](docs/SECRETS.md).
 
 ## Two things that will bite you
 

@@ -1,0 +1,57 @@
+name: Daily price ingest
+
+# TCGCSV refreshes once a day around 20:00 UTC, so this runs at 22:00 UTC
+# with margin. GitHub's scheduler is best-effort and can be delayed by 15+
+# minutes under load, which is irrelevant for a daily snapshot.
+on:
+  schedule:
+    - cron: "0 22 * * *"
+  workflow_dispatch: {}   # lets you trigger a run manually from the Actions tab
+
+# Needed to commit the day's snapshot back to the repo.
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # No pip install: the pipeline is standard-library only.
+      # No API key: TCGCSV requires none.
+      - name: Ingest today's prices
+        env:
+          # Not secret, but kept out of the repo so a public repo does not
+          # publish your email address. Falls back to a generic value.
+          POKEDB_USER_AGENT: ${{ secrets.POKEDB_USER_AGENT || 'pokemon-price-db/0.1 (github-actions)' }}
+        run: |
+          python3 scripts/init_db.py
+          python3 scripts/ingest_tcgcsv.py --quiet
+
+      - name: Export snapshot to CSV
+        run: python3 scripts/export_snapshot.py
+
+      - name: Commit snapshot
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --staged --quiet; then
+            echo "no changes to commit"
+          else
+            git commit -m "Price snapshot $(date -u +%F)"
+            # Another run may have landed first; rebase and retry once.
+            git pull --rebase origin "${GITHUB_REF_NAME}" || true
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
