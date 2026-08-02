@@ -345,16 +345,64 @@ The reasoning is now concrete rather than intuitive: the median trade in this ba
 
 That is a better position to be in than the plan started from. The question went from "can I make money flipping cards" to "does exploitable cross-venue mispricing exist in the $5–20 band, and is it larger than my costs" — which is answerable with data.
 
-## 14. Next action
+## 14. Phase 3 findings — the spread is an artifact, confirmed
 
-**Phase 3: eBay Browse API ingestion and title parsing**, now the critical path. Search the 189-card watchlist against active eBay listings, parse freeform titles into catalog matches, and compute genuine cross-venue spreads.
+Eight days of snapshots (2026-07-25 → 2026-08-01) collected automatically by the GitHub Action. This is the trend analysis Notebook 1 could not run.
 
-Two things needed first:
-- eBay developer keys (`EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET` in `.env`)
-- Trading Cards category selling limits checked (§10 item 5)
+**Prices barely move.** Across 1,963 card-printings in the tradeable band:
 
-And the daily ingest needs to be running, or none of the trend work in §12 ever becomes possible:
+| Measure | Value |
+| --- | --- |
+| Never changed price at all | 1.8% |
+| Median absolute net move over 8 days | **3.11%** |
+| Moved more than 10% | 9.0% |
 
-```
-0 22 * * *  cd /path/to/Learning && python3 scripts/ingest_tcgcsv.py --quiet >> ingest.log 2>&1
-```
+**Wide spreads do not close.** Of 551 cards showing a low-to-market spread above 30% on day one:
+
+| Measure | Value |
+| --- | --- |
+| Still above 30% eight days later | **387 (70.2%)** |
+| Median spread, day 1 → day 8 | 38.5% → 35.1% |
+| Per-card spread correlation across the window | **0.703** |
+
+A 35% "profit opportunity" that sits untouched for eight days in a liquid market is not an opportunity. It is a **stable property of the card** — the low listing is a damaged copy, a misidentified print, or a non-English one. The 0.703 correlation says spread is a characteristic, not an event.
+
+This closes the question Phase 2 raised. **There is no arbitrage inside TCGplayer**, and now it is measured rather than argued. Both remaining hypotheses point the same direction: edge, if it exists, is cross-venue.
+
+It also yields a reusable filter. **Any future candidate should be checked for age.** A real mispricing is *new* — a listing that just appeared, or an auction about to end at a bad hour. One that has been sitting for days has been seen by everyone and declined by all of them. Phase 3's scanner should weight newly-listed and ending-soon items accordingly.
+
+### Phase 3 built, pending credentials
+
+- `pokedb/titles.py` — freeform title → structured card identity, with confidence scoring and rejection of lots, proxies, Japanese cards, sealed product and presales. 22 tests, all passing.
+- `pokedb/ebay.py` — Browse API client with client-credentials OAuth and token caching, plus `scan_watchlist`.
+- `analysis.cross_venue_edge()` — the payoff calculation: buy a live eBay listing, sell at the TCGplayer reference, net of fees and condition discount.
+
+**A bug worth recording.** The first matcher resolved "Charizard ex 223/197" to a Professor's Research promo at 0.95 confidence. Two causes: it queried the catalog on the numerator alone (the catalog stores `223/197`, and only a promo set stores a bare `223`), and it skipped name verification whenever exactly one row came back. Both are fixed, both have regression tests, and the rule is now explicit: **a collector number alone is never sufficient — the name must corroborate it.** This is precisely the failure mode that loses money silently, since a confident wrong match prices one card off another card's comp.
+
+`pokedb/ebay.py` is written against eBay's published documentation but **has never been executed against the live API.** Expect a fix on first contact; response shapes and filter syntax are the usual culprits. Field access is defensive throughout for that reason.
+
+## 15. Next action
+
+**14 days to Aug 17.** The buy-before-sell-after strategy in §4 needs cards *received* before the pivot, and shipping takes 3–5 days. Working backwards:
+
+| By | What |
+| --- | --- |
+| **Aug 4** | eBay developer keys in `.env` — everything downstream is blocked on this |
+| Aug 5–6 | First live scan, fix whatever breaks, measure whether cross-venue edge exists |
+| **Aug 10** | Buy decision. Last safe date for cards to arrive before the pivot |
+| Aug 15 | Inventory in hand, listings drafted |
+| Aug 17 | Plug in the real employee fee rate, re-rank, list |
+
+The single blocking item is the eBay keys. A production keyset from the developer program is same-day in the normal case.
+
+**If cross-venue edge turns out not to exist either**, that is a legitimate result and the honest move is to buy nothing. The measurement is the deliverable; the trade was only ever the pressure test. Spending $100 to prove a model you have already disproven would be the one genuinely bad outcome here.
+
+Still open from §10: Trading Cards category selling limits, and whether the $9.99 graded subscription is still worth it (§16).
+
+## 16. Reconsidering the graded subscription
+
+§5 budgeted $9.99/mo for PokemonPriceTracker as a learning expense, with a "cancel if it isn't teaching you anything" checkpoint. That checkpoint is now, and the recommendation has changed: **defer it.**
+
+The reasoning is that the measurements since have made graded a worse fit, not a better one. Graded slabs at $100 of capital mean one card and zero repetitions. Grading arbitrage needs months of PSA turnaround, which does not fit any window under discussion. And the raw market turns out to be efficient enough that the interesting question moved entirely to cross-venue matching — which is an eBay problem, not a graded-pricing problem.
+
+$10 is better spent as 10% more bankroll, or not spent. The schema already carries `graded_prices`, and the title parser already extracts grader and grade, so this is a deferral rather than a removal. Revisit after Phase 3 produces a real cross-venue result.

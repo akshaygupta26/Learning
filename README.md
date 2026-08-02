@@ -168,6 +168,16 @@ add-on. Full write-up in `notebooks/01_market_survey.ipynb` §4 and
 | --- | --- |
 | 0–1 · schema, fee model, TCGCSV ingester | Complete |
 | 2 · market survey, watchlist (189 cards) | Complete |
-| 3 · eBay Browse + title parsing | **Next — critical path** |
-| 5 · graded prices | Pending |
+| 3 · eBay Browse + title parsing | Built — **blocked on API credentials** |
+| 5 · graded prices | Deferred (see PLAN.md §16) |
 | 6–7 · trade and reconcile | Pending |
+
+Eight days of snapshots confirm the Phase 2 hypothesis: **70% of wide
+low-to-market spreads persist unchanged over 8 days**, with a per-card spread
+correlation of 0.703. Prices move a median of 3.11% over the window. A gap
+that sits still for a week is a property of the card, not an opportunity —
+so there is no arbitrage inside TCGplayer, and edge (if any) is cross-venue.
+
+```bash
+python3 tests/test_titles.py     # 22 tests, title parsing + catalog matching
+```

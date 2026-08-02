@@ -193,3 +193,142 @@ def history_depth(conn: sqlite3.Connection) -> int:
     return conn.execute(
         "SELECT COUNT(DISTINCT as_of_date) FROM price_snapshots"
     ).fetchone()[0]
+
+
+# ---------------------------------------------------------------------------
+# Trend and persistence — requires several snapshot days
+# ---------------------------------------------------------------------------
+
+def load_series(
+    conn: sqlite3.Connection,
+    min_price: float = BULK_CEILING,
+    max_price: float = 40.0,
+) -> pd.DataFrame:
+    """Full price history for the tradeable band, one row per card-day."""
+    df = pd.read_sql(
+        """
+        SELECT ps.product_id, ps.sub_type_name, ps.as_of_date,
+               ps.low_price, ps.market_price
+        FROM price_snapshots ps
+        JOIN products p ON p.product_id = ps.product_id
+        WHERE p.is_single = 1
+          AND ps.market_price BETWEEN ? AND ?
+          AND ps.low_price > 0
+        """,
+        conn,
+        params=(min_price, max_price),
+    )
+    df["spread_pct"] = (df.market_price - df.low_price) / df.market_price
+    return df
+
+
+def volatility(series: pd.DataFrame) -> pd.DataFrame:
+    """Per-card price movement across the collected window."""
+    v = series.groupby(["product_id", "sub_type_name"]).market_price.agg(
+        n_distinct="nunique", p_first="first", p_last="last",
+        p_std="std", p_mean="mean",
+    )
+    v = v[v.p_mean > 0].copy()
+    v["net_change"] = (v.p_last - v.p_first) / v.p_first
+    v["cv"] = v.p_std / v.p_mean
+    return v
+
+
+def spread_persistence(
+    series: pd.DataFrame, wide_threshold: float = 0.30
+) -> dict[str, float]:
+    """Do wide low-to-market spreads close, or do they just sit there?
+
+    This is the decisive test for whether the TCGplayer-internal spread is an
+    opportunity or an artifact. A genuine mispricing gets taken within a day
+    or two in a liquid market. One that persists for a week is telling you
+    the two prices describe different things — a damaged copy versus a Near
+    Mint one, or a misidentified print.
+    """
+    pivot = series.pivot_table(
+        index=["product_id", "sub_type_name"], columns="as_of_date",
+        values="spread_pct",
+    )
+    if pivot.shape[1] < 2:
+        return {"days": pivot.shape[1]}
+
+    d0, d1 = pivot.columns[0], pivot.columns[-1]
+    both = pivot[[d0, d1]].dropna()
+    wide = both[both[d0] > wide_threshold]
+
+    return {
+        "days": pivot.shape[1],
+        "first_date": d0,
+        "last_date": d1,
+        "wide_at_start": len(wide),
+        "still_wide_at_end": int((wide[d1] > wide_threshold).sum()),
+        "persistence_rate": float((wide[d1] > wide_threshold).mean()) if len(wide) else 0.0,
+        "median_spread_start": float(wide[d0].median()) if len(wide) else 0.0,
+        "median_spread_end": float(wide[d1].median()) if len(wide) else 0.0,
+        "spread_correlation": float(both[d0].corr(both[d1])),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Cross-venue — what Phase 3 exists to compute
+# ---------------------------------------------------------------------------
+
+def cross_venue_edge(
+    conn: sqlite3.Connection,
+    min_confidence: float = 0.5,
+    your_rate: float | None = None,
+) -> pd.DataFrame:
+    """Buy an active eBay listing, sell at the TCGplayer reference price.
+
+    This is a genuine two-venue comparison, unlike the single-book screen in
+    Notebook 1: the buy price is a real amount someone will accept right now
+    on one venue, and the sell price is a trailing average of completed sales
+    on another.
+
+    `min_confidence` gates on title-match quality. Low-confidence matches are
+    the ones most likely to be pricing one card off another card's comp.
+    """
+    rate = fees.EBAY_FVF_RATE if your_rate is None else your_rate
+
+    df = pd.read_sql(
+        """
+        SELECT e.listing_id, e.raw_title, e.price, e.shipping_cost,
+               e.condition_parsed, e.grade_parsed, e.listing_type,
+               e.end_time, e.match_confidence,
+               p.name, p.number, s.abbreviation AS set_abbr,
+               v.market_price, v.sub_type_name
+        FROM ebay_listings e
+        JOIN products p ON p.product_id = e.product_id
+        JOIN sets s     ON s.group_id   = p.group_id
+        JOIN v_latest_prices v ON v.product_id = e.product_id
+        WHERE e.match_confidence >= ?
+          AND e.grade_parsed IS NULL
+          AND v.market_price > 0
+        """,
+        conn,
+        params=(min_confidence,),
+    )
+    if df.empty:
+        return df
+
+    # A listing's true cost includes shipping; comparing item price alone
+    # overstates edge by a dollar or more on cards worth ten.
+    df["total_cost"] = df.price + df.shipping_cost
+
+    # Condition discount: TCGCSV prices are Near Mint equivalents, so a played
+    # copy must be marked down before comparison.
+    df["condition_mult"] = (
+        df.condition_parsed.map(fees.CONDITION_MULTIPLIERS).fillna(1.0)
+    )
+    df["adj_market"] = df.market_price * df.condition_mult
+
+    df["net_if_sold"] = [
+        fees.net_proceeds(m, fvf_rate=rate) for m in df.adj_market
+    ]
+    df["edge"] = df.net_if_sold - df.total_cost
+    df["breakeven_fvf"] = [
+        fees.breakeven_fvf(m, c) for m, c in zip(df.adj_market, df.total_cost)
+    ]
+    df["edge_zone"] = [fees.edge_zone(b, rate) for b in df.breakeven_fvf]
+
+    return df.sort_values("edge", ascending=False)
