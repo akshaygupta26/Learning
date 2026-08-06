@@ -1,6 +1,6 @@
 # Project State
 
-**Last updated:** 2026-08-02 (session 02)
+**Last updated:** 2026-08-06 (session 03)
 
 Read this before doing anything. It is the distilled current state — decisions
 already settled, numbers already measured, traps already hit. Session logs hold
@@ -29,8 +29,8 @@ The system is the deliverable. Trading is the pressure test.
 | 5 · graded prices | Deferred, see Decisions |
 | 6–7 · trade and reconcile | Not started |
 
-Daily ingest runs unattended via GitHub Actions. 8 days of snapshots as of
-2026-08-01. It works; leave it alone.
+Daily ingest runs unattended via GitHub Actions. 12 days of snapshots as of
+2026-08-05. It works; leave it alone.
 
 ---
 
@@ -66,27 +66,54 @@ Numbers, not impressions. Do not re-derive these.
 
 ### The market is efficient and static
 
-From 8 days of snapshots (2026-07-25 → 08-01), 1,963 card-printings in the
+From 12 days of snapshots (2026-07-25 → 08-05), 1,978 card-printings in the
 $3–40 band:
 
-- Median absolute price move over 8 days: **3.11%**
-- Never changed price at all: 1.8% · Moved >10%: 9.0%
+- Median absolute price move over the window: **3.50%**
+- Never changed price at all: 1.3% · Moved >10%: 13.4%
+- Median coefficient of variation: 0.021
 
 ### Wide spreads are artifacts, not opportunities
 
-Of 551 cards with a low-to-market spread >30% on day 1:
+Of 548 cards with a low-to-market spread >30% on day 1, **349 (64%) were still
+>30% twelve days later**; median spread 38.5% → 34.1%.
 
-- **387 (70%) still >30% eight days later**
-- Median spread 38.5% → 35.1%
-- **Per-card spread correlation: 0.703**
+Spread autocorrelation by fixed lag — the honest measure, since first-vs-last
+comparisons conflate decay with window length:
 
-A gap that sits untouched for 8 days in a liquid market is a property of the
-card — the cheap listing is a damaged copy, a misidentified print, or
-non-English. TCGCSV publishes no condition, so the catalog cannot distinguish
-them. **Conclusion: there is no arbitrage inside TCGplayer.**
+| Lag | Mean r |
+| --- | --- |
+| 1 day | 0.842 |
+| 2 days | 0.757 |
+| 3 days | 0.689 |
+| 5 days | 0.707 |
+| 7 days | 0.731 |
+
+**Correlation drops then plateaus at ~0.70 rather than decaying toward zero.**
+That plateau is the structural component: roughly 70% of a card's spread is a
+fixed characteristic, the rest is day-to-day noise. The cheap listing is a
+damaged copy, a misidentified print, or non-English, and TCGCSV publishes no
+condition to distinguish them.
+
+**Conclusion: there is no arbitrage inside TCGplayer.** Confirmed at 12 days.
 
 Reusable filter that follows: **a real mispricing is new.** Weight
 newly-listed and ending-soon items; treat long-standing listings as suspect.
+
+### The market is drifting down, and it costs about a quarter of the edge
+
+Equal-weight price index across the 12-day window: **−0.97%**, declining on 8
+of 11 days with 2 up and 1 flat. Median per-card change −0.56%; 54.5% of cards
+down. Small, but monotone enough not to look like noise.
+
+At roughly −0.08%/day, a two-to-three week hold across the Aug 17 pivot costs
+**~1.5–2% of position value — $1.50–2.00 on $100**, against a fee advantage of
+about $8. **Drift eats roughly a quarter of the edge.**
+
+This does not break buy-before-sell-after, but it argues against holding any
+longer than the pivot requires. Sell promptly after Aug 17 rather than waiting
+for a better price. The Sep 16 ME: 30th Celebration release would likely
+accelerate the drift.
 
 ### The tradeable universe is small
 
@@ -147,7 +174,7 @@ Hard-won. Re-learning these costs money or hours.
 Blocking, in order:
 
 1. **eBay developer keys** → `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET` in `.env`.
-   Everything in Phase 3 is blocked on this. Needed by **~Aug 4**.
+   Everything in Phase 3 is blocked on this. Was due **Aug 4 — now overdue**.
 2. **Trading Cards category selling limits.** The owner's eBay account has
    selling history but never in trading cards; category limits may apply to
    first-time category sellers. Check Seller Hub before spending bankroll.
@@ -178,3 +205,4 @@ The measurement was always the deliverable.
 | --- | --- | --- |
 | [01](2026-07-24-01-scoping-and-pipeline.md) | 2026-07-24 → 07-25 | Scoping, plan, Phases 0–2, cron + secrets infra |
 | [02](2026-08-02-02-trend-and-phase-3.md) | 2026-08-02 | 8-day trend analysis, Phase 3 build, graded deferral |
+| [03](2026-08-06-03-twelve-day-trends.md) | 2026-08-06 | 12-day trends, autocorrelation plateau, downward drift |
