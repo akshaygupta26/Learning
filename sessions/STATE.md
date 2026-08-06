@@ -164,6 +164,20 @@ Hard-won. Re-learning these costs money or hours.
   is gone permanently.
 - **`pokedb/ebay.py` has never run against the live API.** Written from docs.
   Expect response-shape or filter-syntax breakage on first contact.
+- **A new production keyset arrives disabled.** eBay requires subscribing to
+  *or explicitly opting out of* marketplace account deletion/closure
+  notifications before the keyset works. Symptom is a "Your Keyset is
+  currently disabled" message on the portal, and auth failures until the
+  compliance step is done. Do this first, before debugging any code.
+- **eBay Sandbox is useless for this project's measurement.** Sandbox Browse
+  search runs on mock data and returns little or nothing for real queries.
+  It can validate OAuth, headers and response parsing, but **cross-venue edge
+  can only be measured against production.** Do not read a sandbox result as
+  evidence about the market.
+- **Browse search returns only `FIXED_PRICE` listings by default.** Auctions
+  require an explicit `buyingOptions` filter — already handled in
+  `pokedb/ebay.py`, but easy to lose in a refactor. Auctions ending at bad
+  hours are a prime source of the mispricing this project is hunting.
 - **Scheduled GitHub Actions are disabled after 60 days of repo inactivity,**
   and bot commits don't reliably reset the timer.
 
@@ -174,7 +188,10 @@ Hard-won. Re-learning these costs money or hours.
 Blocking, in order:
 
 1. **eBay developer keys** → `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET` in `.env`.
-   Everything in Phase 3 is blocked on this. Was due **Aug 4 — now overdue**.
+   Registered 2026-08-06; identity check expected back in a day, so keys
+   ~**Aug 7–8**. This keeps the Aug 10 buy decision achievable. Two traps on
+   arrival — see Gotchas: the keyset ships **disabled**, and **sandbox is
+   useless for measurement**.
 2. **Trading Cards category selling limits.** The owner's eBay account has
    selling history but never in trading cards; category limits may apply to
    first-time category sellers. Check Seller Hub before spending bankroll.
