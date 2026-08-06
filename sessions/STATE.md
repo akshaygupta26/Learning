@@ -1,6 +1,6 @@
 # Project State
 
-**Last updated:** 2026-08-06 (session 03)
+**Last updated:** 2026-08-06 (session 04)
 
 Read this before doing anything. It is the distilled current state — decisions
 already settled, numbers already measured, traps already hit. Session logs hold
@@ -64,66 +64,49 @@ Do not relitigate these without new evidence.
 
 Numbers, not impressions. Do not re-derive these.
 
+Base: 12 days of snapshots (2026-07-25 → 08-05), 1,978 card-printings in the
+$3–40 band. Source: `sessions/2026-08-06-03-twelve-day-trends.md`.
+
 ### The market is efficient and static
 
-From 12 days of snapshots (2026-07-25 → 08-05), 1,978 card-printings in the
-$3–40 band:
-
-- Median absolute price move over the window: **3.50%**
-- Never changed price at all: 1.3% · Moved >10%: 13.4%
-- Median coefficient of variation: 0.021
+Median absolute move over the window **3.50%**; 1.3% never changed price;
+13.4% moved >10%; median CV 0.021.
 
 ### Wide spreads are artifacts, not opportunities
 
-Of 548 cards with a low-to-market spread >30% on day 1, **349 (64%) were still
->30% twelve days later**; median spread 38.5% → 34.1%.
+Of 548 cards with spread >30% on day 1, **349 (64%) were still >30% twelve
+days later** (median 38.5% → 34.1%).
 
-Spread autocorrelation by fixed lag — the honest measure, since first-vs-last
-comparisons conflate decay with window length:
+Spread autocorrelation by fixed lag — 1d 0.842 · 2d 0.757 · 3d 0.689 ·
+5d 0.707 · 7d 0.731. **It drops then plateaus at ~0.70 rather than decaying
+to zero.** The plateau is structural: ~70% of a card's spread is a fixed
+property of that card, the rest is noise. The cheap listing is a damaged copy,
+a misidentified print, or non-English — and TCGCSV publishes no condition to
+tell them apart.
 
-| Lag | Mean r |
-| --- | --- |
-| 1 day | 0.842 |
-| 2 days | 0.757 |
-| 3 days | 0.689 |
-| 5 days | 0.707 |
-| 7 days | 0.731 |
+**Conclusion: no arbitrage inside TCGplayer.** Confirmed at 12 days.
+Follows: **a real mispricing is new.** Weight newly-listed and ending-soon
+items; treat long-standing listings as suspect.
 
-**Correlation drops then plateaus at ~0.70 rather than decaying toward zero.**
-That plateau is the structural component: roughly 70% of a card's spread is a
-fixed characteristic, the rest is day-to-day noise. The cheap listing is a
-damaged copy, a misidentified print, or non-English, and TCGCSV publishes no
-condition to distinguish them.
+### Downward drift costs ~a quarter of the edge
 
-**Conclusion: there is no arbitrage inside TCGplayer.** Confirmed at 12 days.
+Equal-weight index **−0.97%** over the window, down 8 of 11 days (2 up, 1
+flat); median per-card −0.56%, 54.5% of cards down. Small, but too monotone
+to read as noise.
 
-Reusable filter that follows: **a real mispricing is new.** Weight
-newly-listed and ending-soon items; treat long-standing listings as suspect.
-
-### The market is drifting down, and it costs about a quarter of the edge
-
-Equal-weight price index across the 12-day window: **−0.97%**, declining on 8
-of 11 days with 2 up and 1 flat. Median per-card change −0.56%; 54.5% of cards
-down. Small, but monotone enough not to look like noise.
-
-At roughly −0.08%/day, a two-to-three week hold across the Aug 17 pivot costs
-**~1.5–2% of position value — $1.50–2.00 on $100**, against a fee advantage of
-about $8. **Drift eats roughly a quarter of the edge.**
-
-This does not break buy-before-sell-after, but it argues against holding any
-longer than the pivot requires. Sell promptly after Aug 17 rather than waiting
-for a better price. The Sep 16 ME: 30th Celebration release would likely
-accelerate the drift.
+At ~−0.08%/day, a two-to-three week hold costs **$1.50–2.00 on $100** against
+a fee advantage of ~$8. **Sell promptly after Aug 17 — waiting is a losing
+trade.** The Sep 16 release would likely accelerate it.
 
 ### The tradeable universe is small
 
-Of 13,379 priced singles: **76% are worth under $1** — below the $1.25 cost of
-shipping one card, so they are bulk, not inventory. The realistic universe is
-the ~1,100 cards in the $5–20 band.
+Of 13,379 priced singles, **76% are worth under $1** — below the $1.25 cost of
+shipping one card, so bulk rather than inventory. Real universe: the ~1,100
+cards in the $5–20 band.
 
 ### The fee discount is real and small
 
-At an assumed 5% employee rate, across 1,901 cards in the $3–40 band:
+At an assumed 5% rate, 1,901 cards in the $3–40 band:
 
 | Edge zone | Cards | Median profit | Clearing $1.50 |
 | --- | --- | --- | --- |
@@ -131,13 +114,13 @@ At an assumed 5% employee rate, across 1,901 cards in the $3–40 band:
 | `exclusive` (only works for you) | 355 | $0.41 | 31 |
 | `dead` | 1,275 | −$0.90 | 0 |
 
-Median fee advantage: **$0.73/trade** on a median $8.87 card — roughly **$8
-across the whole bankroll**. Median profit is negative in *every* rarity.
+Median fee advantage **$0.73/trade** on a median $8.87 card — ~**$8 across the
+bankroll**. Median profit is negative in *every* rarity.
 
-### Revised expected outcome
+### Expected outcome
 
-**−$25 to +$25.** The open question is whether cross-venue mispricing exists
-at a size worth capturing. Phase 3 answers it.
+**−$25 to +$25.** Open question: does cross-venue mispricing exist at a size
+worth capturing? Phase 3 answers it.
 
 ---
 
@@ -223,3 +206,4 @@ The measurement was always the deliverable.
 | [01](2026-07-24-01-scoping-and-pipeline.md) | 2026-07-24 → 07-25 | Scoping, plan, Phases 0–2, cron + secrets infra |
 | [02](2026-08-02-02-trend-and-phase-3.md) | 2026-08-02 | 8-day trend analysis, Phase 3 build, graded deferral |
 | [03](2026-08-06-03-twelve-day-trends.md) | 2026-08-06 | 12-day trends, autocorrelation plateau, downward drift |
+| [04](2026-08-06-04-ebay-keys-and-smoke-test.md) | 2026-08-06 | eBay registration, smoke test, keyset/sandbox traps |
